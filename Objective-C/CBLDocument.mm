@@ -27,9 +27,9 @@
 #import "CBLStatus.h"
 
 
-@implementation CBLDocument {
-    CBLDictionary* _dict;
-}
+@implementation CBLDocument
+
+@synthesize dict=_dict;
 
 
 + (instancetype) document {
@@ -49,7 +49,7 @@
 {
     self = [super initWithDatabase: database documentID: documentID c4Doc: c4Doc fleeceData: data];
     if (self) {
-        _dict = [[CBLDictionary alloc] initWithFleeceData: self.data];
+        self.dict = [[CBLDictionary alloc] initWithFleeceData: self.data];
     }
     return self;
 }
@@ -92,77 +92,77 @@
 
 
 - (NSUInteger) count {
-    return _dict.count;
+    return self.dict.count;
 }
 
 
 - (NSArray*) keys {
-    return _dict.keys;
+    return self.dict.keys;
 }
 
 
 - (nullable id) objectForKey: (NSString*)key {
-    return [_dict objectForKey: key];
+    return [self.dict objectForKey: key];
 }
 
 
 - (BOOL) booleanForKey: (NSString*)key {
-    return [_dict booleanForKey: key];
+    return [self.dict booleanForKey: key];
 }
 
 
 - (NSInteger) integerForKey: (NSString*)key {
-    return [_dict integerForKey: key];
+    return [self.dict integerForKey: key];
 }
 
 
 - (float) floatForKey: (NSString*)key {
-    return [_dict floatForKey: key];
+    return [self.dict floatForKey: key];
 }
 
 
 - (double) doubleForKey: (NSString*)key {
-    return [_dict doubleForKey: key];
+    return [self.dict doubleForKey: key];
 }
 
 
 - (nullable NSString*) stringForKey: (NSString*)key {
-    return [_dict stringForKey: key];
+    return [self.dict stringForKey: key];
 }
 
 
 - (nullable NSNumber*) numberForKey: (NSString*)key {
-    return [_dict numberForKey: key];
+    return [self.dict numberForKey: key];
 }
 
 
 - (nullable NSDate*) dateForKey: (NSString*)key {
-    return [_dict dateForKey: key];
+    return [self.dict dateForKey: key];
 }
 
 
 - (nullable CBLBlob*) blobForKey: (NSString*)key {
-    return [_dict blobForKey: key];
+    return [self.dict blobForKey: key];
 }
 
 
 - (nullable CBLDictionary*) dictionaryForKey: (NSString*)key {
-    return [_dict dictionaryForKey: key];
+    return [self.dict dictionaryForKey: key];
 }
 
 
 - (nullable CBLArray*) arrayForKey: (NSString*)key {
-    return [_dict arrayForKey: key];
+    return [self.dict arrayForKey: key];
 }
 
 
 - (BOOL) containsObjectForKey: (NSString*)key {
-    return [_dict containsObjectForKey: key];
+    return [self.dict containsObjectForKey: key];
 }
 
 
 - (NSDictionary<NSString*,id>*) toDictionary {
-    return [_dict toDictionary];
+    return [self.dict toDictionary];
 }
 
 
@@ -170,24 +170,27 @@
 
 
 - (void) setC4Doc: (CBLC4Document*)c4doc {
-    [super setC4Doc: c4doc];
-    // Update delegate dictionary:
-    _dict = [[CBLDictionary alloc] initWithFleeceData: self.data];
+    CBL_LOCK(self.lock) {
+        [super setC4Doc: c4doc];
+        
+        // Update delegate dictionary:
+        self.dict = [[CBLDictionary alloc] initWithFleeceData: self.data];
+    }
 }
 
 
 - (void) setDictionary: (NSDictionary<NSString *,id> *)dictionary {
-    [_dict setDictionary: dictionary];
+    [self.dict setDictionary: dictionary];
 }
 
 
 - (void) setObject: (nullable id)value forKey: (NSString*)key {
-    [_dict setObject: value forKey: key];
+    [self.dict setObject: value forKey: key];
 }
 
 
 - (void) removeObjectForKey:(NSString *)key {
-    [_dict removeObjectForKey: key];
+    [self.dict removeObjectForKey: key];
 }
 
 
@@ -198,7 +201,7 @@
                                   objects: (id __unsafe_unretained [])buffer
                                     count: (NSUInteger)len
 {
-    return [_dict countByEnumeratingWithState: state objects: buffer count: len];
+    return [self.dict countByEnumeratingWithState: state objects: buffer count: len];
 }
 
 
@@ -206,7 +209,7 @@
 
 
 - (CBLFragment*) objectForKeyedSubscript: (NSString*)key {
-    return [_dict objectForKeyedSubscript: key];
+    return [self.dict objectForKeyedSubscript: key];
 }
 
 
@@ -214,51 +217,65 @@
 
 
 - (NSUInteger) generation {
-    return super.generation + !!self.changed;
+    CBL_LOCK(self.lock) {
+        return super.generation + !!self.changed;
+    }
 }
 
 
 - (BOOL) isEmpty {
-    return _dict.isEmpty;
+    return self.dict.isEmpty;
 }
 
 
 - (BOOL) save: (NSError**)outError {
-    return [self saveWithConflictResolver: self.effectiveConflictResolver
-                                 deletion: NO
-                                    error: outError];
+    // NOTE: This method is called from the CBLDatabase's saveDocument:error: which already owns
+    // the database's lock.
+    CBL_LOCK(self.lock) {
+        return [self saveWithConflictResolver: self.effectiveConflictResolver
+                                     deletion: NO
+                                        error: outError];
+    }
 }
 
 
 - (BOOL) deleteDocument: (NSError**)outError {
-    return [self saveWithConflictResolver: self.effectiveConflictResolver
-                                 deletion: YES
-                                    error: outError];
+    // NOTE: This method is called from the CBLDatabase's deleteDocument:error: which already owns
+    // the database's lock.
+    CBL_LOCK(self.lock) {
+        return [self saveWithConflictResolver: self.effectiveConflictResolver
+                                     deletion: YES
+                                        error: outError];
+    }
 }
 
 
 - (BOOL) purge: (NSError**)outError {
-    if (!self.exists) {
-        return createError(kCBLStatusNotFound, outError);
-    }
-    
-    C4Transaction transaction(self.c4db);
-    if (!transaction.begin())
-        return convertError(transaction.error(),  outError);
-    
-    C4Error err;
-    if (c4doc_purgeRevision(self.c4Doc.rawDoc, C4Slice(), &err) >= 0) {
-        if (c4doc_save(self.c4Doc.rawDoc, 0, &err)) {
-            // Save succeeded; now commit:
-            if (!transaction.commit())
-                return convertError(transaction.error(), outError);
-            
-            // Reset:
-            [self setC4Doc: nil];
-            return YES;
+    // NOTE: This method is called from the CBLDatabase's purgeDocument:error: which already owns
+    // the database's lock.
+    CBL_LOCK(self.lock) {
+        if (!self.exists) {
+            return createError(kCBLStatusNotFound, outError);
         }
+        
+        C4Transaction transaction(self.c4db);
+        if (!transaction.begin())
+            return convertError(transaction.error(),  outError);
+        
+        C4Error err;
+        if (c4doc_purgeRevision(self.c4Doc.rawDoc, C4Slice(), &err) >= 0) {
+            if (c4doc_save(self.c4Doc.rawDoc, 0, &err)) {
+                // Save succeeded; now commit:
+                if (!transaction.commit())
+                    return convertError(transaction.error(), outError);
+                
+                // Reset:
+                [self setC4Doc: nil];
+                return YES;
+            }
+        }
+        return convertError(err, outError);
     }
-    return convertError(err, outError);
 }
 
 
@@ -268,7 +285,7 @@
 // Reflects only direct changes to the document. Changes on sub dictionaries or arrays will
 // not be propagated here.
 - (BOOL) changed {
-    return _dict.changed;
+    return self.dict.changed;
 }
 
 
